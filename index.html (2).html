@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Le Collectionneur de Savoir — Connectivisme</title>
+
+  <!-- Tailwind via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Canvas confetti (bonus) -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <style>
+    /* Micro-animations "corporate mais fun" */
+    @keyframes pop {
+      0% { transform: scale(.98); opacity: .6; }
+      60% { transform: scale(1.02); opacity: 1; }
+      100% { transform: scale(1); }
+    }
+    .anim-pop { animation: pop .25s ease-out; }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-4px); }
+      50% { transform: translateX(4px); }
+      75% { transform: translateX(-2px); }
+    }
+    .anim-shake { animation: shake .25s ease-in-out; }
+
+    @keyframes pulseGlow {
+      0%, 100% { filter: drop-shadow(0 0 0 rgba(0,0,0,0)); }
+      50% { filter: drop-shadow(0 0 10px rgba(99,102,241,.35)); }
+    }
+    .glow { animation: pulseGlow 1.4s ease-in-out infinite; }
+
+    /* Inventory: horizontal scroll but always bottom */
+    .inventory-scroll::-webkit-scrollbar { height: 10px; }
+    .inventory-scroll::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .7); border-radius: 999px; }
+    .inventory-scroll::-webkit-scrollbar-track { background: rgba(148, 163, 184, .2); border-radius: 999px; }
+
+    /* Drag hint */
+    .drag-ghost { opacity: .6; transform: rotate(-1deg) scale(.99); }
+
+    /* Rare border effects */
+    .rare-border { box-shadow: 0 0 0 1px rgba(59,130,246,.35), 0 10px 30px rgba(59,130,246,.08); }
+    .epic-border { box-shadow: 0 0 0 1px rgba(168,85,247,.35), 0 10px 35px rgba(168,85,247,.10); }
+    .legendary-border { box-shadow: 0 0 0 1px rgba(245,158,11,.45), 0 12px 40px rgba(245,158,11,.12); }
+  </style>
+</head>
+
+<body class="min-h-screen bg-slate-50 text-slate-900">
+  <!-- Top bar -->
+  <header class="sticky top-0 z-30 backdrop-blur bg-white/80 border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex items-start sm:items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-sm text-white font-semibold">
+          🧠
+        </div>
+        <div>
+          <h1 id="pageTitle" class="text-lg sm:text-xl font-semibold tracking-tight select-none cursor-pointer">
+            Le Collectionneur de Savoir
+          </h1>
+          <p class="text-sm text-slate-600">
+            Théorie : <span class="font-medium text-slate-800">Connectivisme</span> — Découvrir le vocabulaire en jouant.
+          </p>
+        </div>
+      </div>
+
+      <div class="flex flex-col sm:items-end gap-1">
+        <div class="text-sm">
+          <span class="text-slate-500">Nom & Prénom :</span>
+          <span class="font-semibold">[ÉCRIRE ICI MON NOM COMPLET]</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs px-2 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
+            Mission active
+          </span>
+          <span id="statusChip" class="text-xs px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700">
+            Prêt
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress / timer row -->
+    <div class="max-w-6xl mx-auto px-4 pb-3">
+      <div class="flex items-center gap-3">
+        <div class="flex-1">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-slate-500">Progression</span>
+            <span id="progressLabel" class="text-xs font-medium text-slate-700">0%</span>
+          </div>
+          <div class="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
+            <div id="progressBar" class="h-full w-0 bg-indigo-600 transition-all duration-300"></div>
+          </div>
+        </div>
+
+        <div class="shrink-0 w-32">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-slate-500">Temps</span>
+            <span id="timerLabel" class="text-xs font-semibold text-slate-800">--</span>
+          </div>
+          <div class="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
+            <div id="timerBar" class="h-full w-0 bg-emerald-600 transition-all duration-300"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <main class="max-w-6xl mx-auto px-4 pt-6 pb-44">
+    <!-- Game card -->
+    <section id="gameSection" class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <!-- Left info panel -->
+      <aside class="lg:col-span-1">
+        <div class="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold">Tableau de mission</h2>
+            <span id="scoreChip" class="text-xs px-2 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
+              Score: 0
+            </span>
+          </div>
+
+          <div class="mt-4 space-y-3">
+            <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+              <div class="text-xs text-slate-500">Objectif pédagogique</div>
+              <div class="text-sm font-medium text-slate-800">Maîtriser le vocabulaire clé du Connectivisme</div>
+              <div class="text-xs text-slate-600 mt-1">
+                Tu collectionnes des cartes-concepts. Chaque bonne réponse enrichit ton inventaire.
+              </div>
+            </div>
+
+            <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+              <div class="text-xs text-slate-500">Règles rapides</div>
+              <ul class="text-xs text-slate-700 mt-1 list-disc pl-4 space-y-1">
+                <li>20–30 secondes par question (timer).</li>
+                <li>Bonne réponse = 1 carte (rareté aléatoire).</li>
+                <li>Glisse-dépose les cartes pour organiser ton inventaire.</li>
+                <li>Pin une carte favorite ⭐ (1 seule à la fois).</li>
+              </ul>
+            </div>
+
+            <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+              <div class="text-xs text-slate-500">Leviers Octalysis activés</div>
+              <div class="flex flex-wrap gap-2 mt-2">
+                <span class="text-xs px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700">#4 Possession</span>
+                <span class="text-xs px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700">#7 Imprévisibilité</span>
+                <span class="text-xs px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">#3 Créativité</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 flex gap-2">
+            <button id="btnStart" class="flex-1 px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-[.99] text-white font-semibold shadow-sm transition">
+              Démarrer
+            </button>
+            <button id="btnReset" class="px-4 py-3 rounded-2xl bg-white hover:bg-slate-50 active:scale-[.99] border border-slate-200 text-slate-800 font-semibold shadow-sm transition">
+              Reset
+            </button>
+          </div>
+
+          <p id="microHint" class="text-xs text-slate-500 mt-3">
+            Astuce : clique sur le titre 5 fois 👀
+          </p>
+        </div>
+      </aside>
+
+      <!-- Center interactive panel -->
+      <section class="lg:col-span-2">
+        <div id="questionCard" class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+          <div class="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-indigo-100 blur-2xl opacity-70"></div>
+          <div class="absolute -bottom-10 -left-10 w-40 h-40 rounded-full bg-amber-100 blur-2xl opacity-60"></div>
+
+          <div class="relative">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="text-xs text-slate-500">Carte centrale</div>
+                <h3 id="qTitle" class="text-xl sm:text-2xl font-semibold tracking-tight mt-1">
+                  Appuie sur “Démarrer” pour lancer la mission.
+                </h3>
+              </div>
+
+              <div class="shrink-0 flex flex-col items-end gap-2">
+                <span id="qTypeBadge" class="text-xs px-2 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
+                  —
+                </span>
+                <span id="qIndexBadge" class="text-xs px-2 py-1 rounded-full bg-white/70 border border-slate-200 text-slate-700">
+                  0 / 0
+                </span>
+              </div>
+            </div>
+
+            <p id="qPrompt" class="text-sm text-slate-600 mt-3 leading-relaxed">
+              Une situation pédagogique s’affichera ici.
+            </p>
+
+            <!-- Options area -->
+            <div class="mt-5">
+              <!-- Interaction “Associer” (chips -> dropzones) -->
+              <div id="matchZone" class="hidden">
+                <div class="text-xs text-slate-500 mb-2">Glisse le bon concept dans la bonne zone</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div class="text-xs font-medium text-slate-700 mb-2">Concepts</div>
+                    <div id="matchChips" class="flex flex-wrap gap-2"></div>
+                  </div>
+                  <div>
+                    <div class="text-xs font-medium text-slate-700 mb-2">Zone cible</div>
+                    <div id="matchDropzones" class="space-y-2"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Interaction “Choix scénarisé” (cards) -->
+              <div id="choiceZone" class="hidden">
+                <div class="text-xs text-slate-500 mb-2">Choisis la meilleure réponse (et lis le feedback)</div>
+                <div id="choiceCards" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+              </div>
+
+              <!-- Interaction “Vrai/Faux + Justif” -->
+              <div id="tfZone" class="hidden">
+                <div class="text-xs text-slate-500 mb-2">Vrai ou Faux ?</div>
+                <div class="flex gap-3">
+                  <button data-tf="true" class="tfBtn flex-1 px-4 py-3 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[.99] font-semibold transition">
+                    ✅ Vrai
+                  </button>
+                  <button data-tf="false" class="tfBtn flex-1 px-4 py-3 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[.99] font-semibold transition">
+                    ❌ Faux
+                  </button>
+                </div>
+
+                <div class="mt-3">
+                  <label class="text-xs text-slate-500">Mini-justification (1 phrase) — bonus “vibe”</label>
+                  <input id="tfJustif" type="text" maxlength="110"
+                         class="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                         placeholder="Ex: Parce que l’apprentissage vient des connexions entre sources." />
+                </div>
+              </div>
+            </div>
+
+            <!-- Feedback + actions -->
+            <div class="mt-5 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div id="feedbackBox" class="flex-1 p-4 rounded-2xl border border-slate-200 bg-slate-50 text-sm text-slate-700">
+                Feedback : prêt.
+              </div>
+
+              <div class="flex gap-2">
+                <button id="btnHint" class="px-4 py-3 rounded-2xl bg-white hover:bg-slate-50 active:scale-[.99] border border-slate-200 text-slate-800 font-semibold shadow-sm transition">
+                  Indice
+                </button>
+                <button id="btnValidate" class="px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-[.99] text-white font-semibold shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed">
+                  Valider
+                </button>
+                <button id="btnNext" class="px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-[.99] text-white font-semibold shadow-sm transition hidden">
+                  Suivant
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-4 text-xs text-slate-500 flex items-center justify-between">
+              <span id="streakLabel">Série: 0 🔥</span>
+              <span id="timePenaltyLabel">Temps: —</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Final screen -->
+        <div id="finalScreen" class="hidden mt-5 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="text-xs text-slate-500">Fin de mission</div>
+              <h3 class="text-2xl font-semibold mt-1">Résultats</h3>
+              <p class="text-sm text-slate-600 mt-2">Ton inventaire reflète ta progression : ownership + créativité ✅</p>
+            </div>
+            <div class="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-sm">
+              🏁
+            </div>
+          </div>
+
+          <div class="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+              <div class="text-xs text-slate-500">Score</div>
+              <div id="finalScore" class="text-2xl font-semibold">0</div>
+            </div>
+            <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+              <div class="text-xs text-slate-500">Mention</div>
+              <div id="finalMention" class="text-2xl font-semibold">—</div>
+            </div>
+            <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+              <div class="text-xs text-slate-500">Cartes gagnées</div>
+              <div id="finalCards" class="text-2xl font-semibold">0</div>
+            </div>
+          </div>
+
+          <div class="mt-5 flex gap-2">
+            <button id="btnReplay" class="px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-[.99] text-white font-semibold shadow-sm transition">
+              Rejouer
+            </button>
+            <button id="btnClearStorage" class="px-4 py-3 rounded-2xl bg-white hover:bg-slate-50 active:scale-[.99] border border-slate-200 text-slate-800 font-semibold shadow-sm transition">
+              Effacer sauvegarde
+            </button>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <!-- INVENTORY (always bottom) -->
+  <footer class="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/90 backdrop-blur">
+    <div class="max-w-6xl mx-auto px-4 py-3">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <div class="w-9 h-9 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-sm">🗂️</div>
+          <div>
+            <div class="text-sm font-semibold">Inventaire</div>
+            <div class="text-xs text-slate-500">
+              JSON <span class="font-mono">inventaire</span> — glisse-dépose pour réorganiser • clique pour détails • ⭐ pour pin
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span id="pinHint" class="text-xs px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 hidden sm:inline">
+            Carte favorite : <span id="pinTitle" class="font-semibold">—</span>
+          </span>
+          <span id="invCount" class="text-xs px-2 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
+            0 carte(s)
+          </span>
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <div id="inventoryGrid" class="inventory-scroll flex gap-3 overflow-x-auto pb-2">
+          <!-- cards injected here -->
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Modal for card details -->
+  <div id="modal" class="hidden fixed inset-0 z-50">
+    <div class="absolute inset-0 bg-black/30"></div>
+    <div class="relative max-w-lg mx-auto mt-24 bg-white rounded-3xl border border-slate-200 shadow-xl p-5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-xs text-slate-500">Détails de la carte</div>
+          <div id="modalTitle" class="text-xl font-semibold mt-1">—</div>
+        </div>
+        <button id="modalClose" class="px-3 py-2 rounded-2xl border border-slate-200 hover:bg-slate-50 active:scale-[.99] transition">
+          ✕
+        </button>
+      </div>
+
+      <div id="modalBody" class="mt-4 text-sm text-slate-700 leading-relaxed">
+        —
+      </div>
+
+      <div class="mt-4 flex gap-2">
+        <button id="modalPin" class="flex-1 px-4 py-3 rounded-2xl bg-amber-600 hover:bg-amber-700 active:scale-[.99] text-white font-semibold transition">
+          ⭐ Définir comme favorite
+        </button>
+        <button id="modalOk" class="px-4 py-3 rounded-2xl bg-white hover:bg-slate-50 active:scale-[.99] border border-slate-200 font-semibold transition">
+          OK
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Easter egg modal -->
+  <div id="egg" class="hidden fixed inset-0 z-50">
+    <div class="absolute inset-0 bg-black/40"></div>
+    <div class="relative max-w-xl mx-auto mt-24 bg-white rounded-3xl border border-slate-200 shadow-xl p-6">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-xs text-slate-500">Easter Egg 🎁</div>
+          <div class="text-2xl font-semibold mt-1">Mode “Vibe” activé</div>
+          <p class="text-sm text-slate-600 mt-2">
+            Tu viens de débloquer un bonus : +1 carte <span class="font-semibold">Rare</span> si tu réussis la prochaine question 💡
+          </p>
+        </div>
+        <button id="eggClose" class="px-3 py-2 rounded-2xl border border-slate-200 hover:bg-slate-50 active:scale-[.99] transition">✕</button>
+      </div>
+
+      <div class="mt-5 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+        <div class="text-sm font-semibold">Mini mantra du connectivisme</div>
+        <div class="text-sm text-slate-700 mt-1">
+          “Apprendre, c’est <span class="font-semibold">tisser des connexions</span> — entre idées, personnes, et ressources.”
+        </div>
+      </div>
+
+      <div class="mt-5 flex gap-2">
+        <button id="eggOk" class="px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-[.99] text-white font-semibold transition">
+          Compris ✅
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /************************************************************
+     * INVENTAIRE JSON (EXIGENCE DU PROF / PROMPTING CHALLENGE)
+     * Chaque carte ajoutée = { id, titre, description, rarete, icone, timestamp }
+     ************************************************************/
+    let inventaire = [];
+
+    /************************************************************
+     * QUESTIONS JSON (modif facile)
+     * Théorie : Connectivisme (Siemens)
+     * Types: "match", "choice", "tf"
+     ************************************************************/
+    const questions = [
+      {
+        id: "q1",
+        type: "choice",
+        title: "Le principe central",
+        prompt: "Dans une activité en ligne, tu apprends surtout grâce aux échanges et ressources du réseau. Quel concept du connectivisme décrit le mieux cette idée ?",
+        options: [
+          { id: "a", label: "Apprentissage comme réseau de connexions", isCorrect: true, why: "Le connectivisme voit la connaissance comme distribuée dans un réseau (personnes, outils, contenus)." },
+          { id: "b", label: "Renforcement par récompense", isCorrect: false, why: "Ça renvoie plutôt au behaviorisme (stimulus-réponse)." },
+          { id: "c", label: "Zone proximale de développement", isCorrect: false, why: "Concept plutôt socioconstructiviste (Vygotsky)." },
+          { id: "d", label: "Conditionnement classique", isCorrect: false, why: "Référence à Pavlov, pas au connectivisme." }
+        ],
+        hint: "Pense à 'apprendre = se connecter'.",
+        card: { titre: "Réseau d’apprentissage", description: "La connaissance est distribuée dans un réseau de personnes, ressources et outils.", icone: "🕸️" }
+      },
+      {
+        id: "q2",
+        type: "match",
+        title: "Associer concept → définition",
+        prompt: "Glisse le bon concept dans la définition qui correspond.",
+        chips: [
+          { id: "c1", text: "Nœud", icon: "🔗" },
+          { id: "c2", text: "Apprendre à apprendre", icon: "🧭" },
+          { id: "c3", text: "Actualisation", icon: "🕒" }
+        ],
+        dropzones: [
+          { id: "d1", definition: "Élément du réseau (personne, idée, ressource) où la connaissance peut résider.", answerChipId: "c1" },
+          { id: "d2", definition: "Compétence clé : savoir chercher, filtrer, et relier de nouvelles informations.", answerChipId: "c2" },
+          { id: "d3", definition: "La valeur d’une info dépend de sa fraîcheur : elle peut changer vite.", answerChipId: "c3" }
+        ],
+        hint: "Un 'nœud' est un point du réseau.",
+        card: { titre: "Nœuds & Connexions", description: "Apprendre = relier des nœuds (sources) et maintenir les connexions utiles.", icone: "🔗" }
+      },
+      {
+        id: "q3",
+        type: "tf",
+        title: "Vrai / Faux",
+        prompt: "Dans le connectivisme, la connaissance peut exister à l’extérieur de l’individu (dans des bases de données, outils, communautés).",
+        correctTF: true,
+        hint: "Pense 'connaissance distribuée'.",
+        card: { titre: "Connaissance distribuée", description: "La connaissance n’est pas seulement dans la tête : elle peut être stockée dans des outils et communautés.", icone: "🗃️" }
+      },
+      {
+        id: "q4",
+        type: "choice",
+        title: "Compétence de survie",
+        prompt: "Tu suis 20 sources, mais certaines deviennent peu fiables. Quelle action correspond le mieux à une compétence connectiviste ?",
+        options: [
+          { id: "a", label: "Filtrer, comparer, et réorganiser tes sources", isCorrect: true, why: "Le connectivisme insiste sur le tri/évaluation des sources et la mise à jour des connexions." },
+          { id: "b", label: "Mémoriser mot à mot tous les articles", isCorrect: false, why: "Trop statique : ici on valorise le réseau et l’actualisation." },
+          { id: "c", label: "Éviter les communautés pour rester autonome", isCorrect: false, why: "Le réseau et la collaboration sont centraux." },
+          { id: "d", label: "Répondre au hasard pour aller vite", isCorrect: false, why: "Pas de stratégie de qualité." }
+        ],
+        hint: "Qualité = filtre + mise à jour.",
+        card: { titre: "Filtrage & Évaluation", description: "Compétence clé : repérer la fiabilité, croiser, actualiser tes sources.", icone: "🧪" }
+      },
+      {
+        id: "q5",
+        type: "match",
+        title: "Associer concept → exemple",
+        prompt: "Glisse le concept sur l’exemple correct.",
+        chips: [
+          { id: "c1", text: "Sérendipité", icon: "🍀" },
+          { id: "c2", text: "Communautés", icon: "👥" },
+          { id: "c3", text: "Auto-organisation", icon: "🧩" }
+        ],
+        dropzones: [
+          { id: "d1", definition: "Tu trouves une ressource excellente en cliquant 'par hasard' sur un lien recommandé.", answerChipId: "c1" },
+          { id: "d2", definition: "Tu apprends via un groupe Discord / forum qui partage astuces et ressources.", answerChipId: "c2" },
+          { id: "d3", definition: "Tu réorganises ton système de notes selon les nouveaux objectifs du cours.", answerChipId: "c3" }
+        ],
+        hint: "🍀 = découverte inattendue.",
+        card: { titre: "Sérendipité", description: "Découvrir de la valeur de façon inattendue via le réseau.", icone: "🍀" }
+      },
+      {
+        id: "q6",
+        type: "tf",
+        title: "Vrai / Faux",
+        prompt: "Dans le connectivisme, 'avoir une bonne mémoire' est plus important que 'savoir où trouver l’info'.",
+        correctTF: false,
+        hint: "Ici, l'accès et la connexion priment.",
+        card: { titre: "Savoir où chercher", description: "La capacité à accéder, connecter, et actualiser prime sur la mémorisation brute.", icone: "🧭" }
+      },
+      {
+        id: "q7",
+        type: "choice",
+        title: "Décision rapide",
+        prompt: "On te propose 2 ressources : une récente mais inconnue, une ancienne mais célèbre. Quelle stratégie est la plus connectiviste ?",
+        options: [
+          { id: "a", label: "Prendre l’ancienne parce qu’elle est célèbre, sans vérifier", isCorrect: false, why: "La notoriété ne suffit pas : il faut évaluer et actualiser." },
+          { id: "b", label: "Comparer, vérifier la date, croiser avec d’autres sources", isCorrect: true, why: "La 'currency' (actualité) + la qualité des connexions sont essentielles." },
+          { id: "c", label: "Choisir au hasard pour gagner du temps", isCorrect: false, why: "Pas de compétence de filtrage." },
+          { id: "d", label: "Ignorer les sources récentes par principe", isCorrect: false, why: "Le connectivisme valorise l’actualisation." }
+        ],
+        hint: "Date + croisement + réseau.",
+        card: { titre: "Actualisation", description: "La valeur d’une info dépend de sa fraîcheur et de sa vérification.", icone: "🕒" }
+      },
+      {
+        id: "q8",
+        type: "choice",
+        title: "Le rôle de l’outil",
+        prompt: "Dans une carte mentale numérique, tu relies notions, sites, vidéos, personnes. En connectivisme, l’outil est plutôt…",
+        options: [
+          { id: "a", label: "Un simple décor (sans impact)", isCorrect: false, why: "Les outils peuvent porter la connaissance." },
+          { id: "b", label: "Un support où la connaissance peut résider", isCorrect: true, why: "La connaissance peut être externe : outils, bases, IA, communautés." },
+          { id: "c", label: "Une distraction à éviter", isCorrect: false, why: "Au contraire, l’écosystème outille les connexions." },
+          { id: "d", label: "Un élément uniquement pour noter", isCorrect: false, why: "Il peut structurer, recommander, connecter, filtrer." }
+        ],
+        hint: "Connaissance distribuée + outils.",
+        card: { titre: "Écosystème d’outils", description: "Outils & plateformes peuvent stocker et faciliter les connexions de connaissance.", icone: "🧰" }
+      },
+      {
+        id: "q9",
+        type: "tf",
+        title: "Vrai / Faux",
+        prompt: "Plus ton réseau d’apprentissage est diversifié (sources, points de vue), plus tu réduis les biais et améliores la qualité d’apprentissage.",
+        correctTF: true,
+        hint: "Diversité = meilleure résilience.",
+        card: { titre: "Diversité des sources", description: "Un réseau diversifié améliore la robustesse et réduit certains biais.", icone: "🌐" }
+      }
+    ];
+
+    /************************************************************
+     * RARETÉ (Levier 7)
+     ************************************************************/
+    const RARITIES = [
+      { key: "Commune",  weight: 60, badge: "bg-slate-100 border-slate-200 text-slate-700", ring: "", glow: "", confetti: false },
+      { key: "Rare",     weight: 26, badge: "bg-blue-50 border-blue-200 text-blue-700", ring: "rare-border", glow: "glow", confetti: true },
+      { key: "Épique",   weight: 11, badge: "bg-fuchsia-50 border-fuchsia-200 text-fuchsia-700", ring: "epic-border", glow: "glow", confetti: true },
+      { key: "Légendaire", weight: 3, badge: "bg-amber-50 border-amber-200 text-amber-800", ring: "legendary-border", glow: "glow", confetti: true }
+    ];
+
+    const POSITIVE_FEEDBACK = [
+      "✨ Bien joué ! Tu viens de renforcer une connexion utile.",
+      "🧠 Solide ! Ton réseau de connaissances s’agrandit.",
+      "⚡ Excellent ! Tu viens d’actualiser ton graphe mental."
+    ];
+
+    /************************************************************
+     * STATE
+     ************************************************************/
+    const STORAGE_KEY = "collector_v1_connectivisme";
+    let currentIndex = -1;
+    let score = 0;
+    let streak = 0;
+    let answered = false;
+    let selectedAnswer = null; // for choice/tf
+    let matchState = { placed: {} }; // dropzoneId -> chipId
+    let timer = null;
+    let timeLeft = 0;
+    let timeTotal = 25; // 20-30 seconds (here 25)
+    let timeExpired = false;
+    let eggClicks = 0;
+    let eggArmed = false; // next success gives +1 Rare
+    let pinnedCardId = null;
+
+    /************************************************************
+     * DOM
+     ************************************************************/
+    const el = (id) => document.getElementById(id);
+
+    const btnStart = el("btnStart");
+    const btnReset = el("btnReset");
+    const btnHint = el("btnHint");
+    const btnValidate = el("btnValidate");
+    const btnNext = el("btnNext");
+
+    const qTitle = el("qTitle");
+    const qPrompt = el("qPrompt");
+    const qTypeBadge = el("qTypeBadge");
+    const qIndexBadge = el("qIndexBadge");
+
+    const feedbackBox = el("feedbackBox");
+    const progressBar = el("progressBar");
+    const progressLabel = el("progressLabel");
+    const timerLabel = el("timerLabel");
+    const timerBar = el("timerBar");
+    const statusChip = el("statusChip");
+    const scoreChip = el("scoreChip");
+    const streakLabel = el("streakLabel");
+    const timePenaltyLabel = el("timePenaltyLabel");
+
+    const matchZone = el("matchZone");
+    const matchChips = el("matchChips");
+    const matchDropzones = el("matchDropzones");
+
+    const choiceZone = el("choiceZone");
+    const choiceCards = el("choiceCards");
+
+    const tfZone = el("tfZone");
+    const tfJustif = el("tfJustif");
+
+    const inventoryGrid = el("inventoryGrid");
+    const invCount = el("invCount");
+    const pinHint = el("pinHint");
+    const pinTitle = el("pinTitle");
+
+    const finalScreen = el("finalScreen");
+    const gameSection = el("gameSection");
+    const finalScore = el("finalScore");
+    const finalMention = el("finalMention");
+    const finalCards = el("finalCards");
+    const btnReplay = el("btnReplay");
+    const btnClearStorage = el("btnClearStorage");
+
+    const modal = el("modal");
+    const modalTitle = el("modalTitle");
+    const modalBody = el("modalBody");
+    const modalClose = el("modalClose");
+    const modalOk = el("modalOk");
+    const modalPin = el("modalPin");
+
+    const egg = el("egg");
+    const eggClose = el("eggClose");
+    const eggOk = el("eggOk");
+
+    /************************************************************
+     * UTILITIES
+     ************************************************************/
+    function safeNowISO() {
+      try { return new Date().toISOString(); } catch { return String(Date.now()); }
+    }
+
+    function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
+    function weightedPick(items) {
+      const total = items.reduce((sum, it) => sum + it.weight, 0);
+      let r = Math.random() * total;
+      for (const it of items) {
+        r -= it.weight;
+        if (r <= 0) return it;
+      }
+      return items[items.length - 1];
+    }
+
+    function setStatus(text, variant = "indigo") {
+      const styles = {
+        indigo: "bg-indigo-50 border-indigo-200 text-indigo-700",
+        emerald: "bg-emerald-50 border-emerald-200 text-emerald-700",
+        amber: "bg-amber-50 border-amber-200 text-amber-800",
+        slate: "bg-slate-100 border-slate-200 text-slate-700",
+        red: "bg-rose-50 border-rose-200 text-rose-700"
+      };
+      statusChip.className = `text-xs px-2 py-1 rounded-full border ${styles[variant] || styles.indigo}`;
+      statusChip.textContent = text;
+    }
+
+    function setFeedback(text, ok = true, animate = "") {
+      feedbackBox.textContent = text;
+      feedbackBox.className = `flex-1 p-4 rounded-2xl border text-sm transition ${
+        ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"
+      } ${animate}`;
+      if (animate) {
+        setTimeout(() => feedbackBox.classList.remove(animate), 350);
+      }
+    }
+
+    function updateScoreUI() {
+      scoreChip.textContent = `Score: ${score}`;
+      streakLabel.textContent = `Série: ${streak} 🔥`;
+    }
+
+    function updateProgressUI() {
+      const total = questions.length;
+      const current = clamp(currentIndex + 1, 0, total);
+      const pct = total ? Math.round((current / total) * 100) : 0;
+      progressBar.style.width = `${pct}%`;
+      progressLabel.textContent = `${pct}%`;
+      qIndexBadge.textContent = `${current} / ${total}`;
+    }
+
+    function stopTimer() {
+      if (timer) clearInterval(timer);
+      timer = null;
+    }
+
+    function startTimer(seconds) {
+      stopTimer();
+      timeTotal = seconds;
+      timeLeft = seconds;
+      timeExpired = false;
+      renderTimer();
+
+      timer = setInterval(() => {
+        timeLeft -= 1;
+        if (timeLeft <= 0) {
+          timeLeft = 0;
+          timeExpired = true;
+          renderTimer();
+          stopTimer();
+          onTimeExpired();
+        } else {
+          renderTimer();
+        }
+      }, 1000);
+    }
+
+    function renderTimer() {
+      timerLabel.textContent = `${timeLeft}s`;
+      const pct = timeTotal ? (timeLeft / timeTotal) * 100 : 0;
+      timerBar.style.width = `${pct}%`;
+
+      // Color shift without specifying explicit colors in Tailwind is tricky; keep bar color but update label meaning
+      timePenaltyLabel.textContent = timeExpired ? "Temps: écoulé ⛔" : `Temps: ${timeLeft}s`;
+    }
+
+    function onTimeExpired() {
+      btnValidate.disabled = true;
+      btnNext.classList.remove("hidden");
+      setStatus("Temps écoulé", "red");
+      setFeedback("⏱️ Temps écoulé : validation désactivée. Clique sur “Suivant” pour continuer.", false, "anim-shake");
+      lockInteractions(true);
+      answered = true;
+      streak = 0;
+      updateScoreUI();
+    }
+
+    function lockInteractions(locked) {
+      // Choice cards
+      [...choiceCards.querySelectorAll("[data-option]")].forEach(btn => {
+        btn.disabled = locked;
+        btn.classList.toggle("opacity-60", locked);
+        btn.classList.toggle("cursor-not-allowed", locked);
+      });
+
+      // TF buttons
+      [...document.querySelectorAll(".tfBtn")].forEach(b => {
+        b.disabled = locked;
+        b.classList.toggle("opacity-60", locked);
+        b.classList.toggle("cursor-not-allowed", locked);
+      });
+
+      tfJustif.disabled = locked;
+
+      // Match chips
+      [...matchChips.querySelectorAll("[draggable='true']")].forEach(ch => {
+        ch.draggable = !locked;
+        ch.classList.toggle("opacity-60", locked);
+      });
+    }
+
+    function maybeConfetti(rarityKey) {
+      if (typeof confetti !== "function") return;
+      const r = RARITIES.find(x => x.key === rarityKey);
+      if (!r || !r.confetti) return;
+
+      const count = rarityKey === "Légendaire" ? 200 : (rarityKey === "Épique" ? 140 : 90);
+      confetti({
+        particleCount: count,
+        spread: 70,
+        origin: { y: 0.75 }
+      });
+    }
+
+    function computeMention(score, total) {
+      // Score: 10 points per correct (we’ll use that)
+      const max = total * 10;
+      const ratio = max ? score / max : 0;
+      if (ratio >= 0.8) return "Expert";
+      if (ratio >= 0.5) return "Intermédiaire";
+      return "Débutant";
+    }
+
+    function saveSession() {
+      const payload = { inventaire, score, currentIndex, streak, pinnedCardId, eggArmed };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)); } catch {}
+    }
+
+    function loadSession() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        const data = JSON.parse(raw);
+        if (!data || typeof data !== "object") return false;
+
+        inventaire = Array.isArray(data.inventaire) ? data.inventaire : [];
+        score = Number.isFinite(data.score) ? data.score : 0;
+        currentIndex = Number.isFinite(data.currentIndex) ? data.currentIndex : -1;
+        streak = Number.isFinite(data.streak) ? data.streak : 0;
+        pinnedCardId = data.pinnedCardId || null;
+        eggArmed = !!data.eggArmed;
+
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    function clearSession() {
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    }
+
+    /************************************************************
+     * INVENTORY / CARDS (Levier 4 + 3)
+     ************************************************************/
+    function getRarityStyles(rarityKey) {
+      const r = RARITIES.find(x => x.key === rarityKey) || RARITIES[0];
+      const glow = r.glow ? r.glow : "";
+      const ring = r.ring ? r.ring : "";
+      return { badgeClass: r.badge, glow, ring };
+    }
+
+    function renderInventory() {
+      inventoryGrid.innerHTML = "";
+
+      invCount.textContent = `${inventaire.length} carte(s)`;
+      const pinned = inventaire.find(c => c.id === pinnedCardId);
+      if (pinned) {
+        pinHint.classList.remove("hidden");
+        pinTitle.textContent = `${pinned.icone} ${pinned.titre}`;
+      } else {
+        pinHint.classList.add("hidden");
+        pinTitle.textContent = "—";
+      }
+
+      inventaire.forEach((card, idx) => {
+        const { badgeClass, glow, ring } = getRarityStyles(card.rarete);
+        const isPinned = card.id === pinnedCardId;
+
+        const cardBtn = document.createElement("button");
+        cardBtn.type = "button";
+        cardBtn.className = [
+          "min-w-[220px] max-w-[220px] text-left p-4 rounded-2xl border border-slate-200 bg-white shadow-sm",
+          "hover:shadow-md hover:-translate-y-[1px] active:scale-[.99] transition",
+          ring, glow
+        ].join(" ");
+
+        cardBtn.setAttribute("data-inv-index", String(idx));
+        cardBtn.setAttribute("draggable", "true");
+        cardBtn.setAttribute("aria-label", `Carte ${card.titre}`);
+
+        cardBtn.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div class="text-lg">${card.icone}</div>
+            <div class="flex items-center gap-2">
+              ${isPinned ? `<span class="text-xs px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800">⭐ Pin</span>` : ""}
+              <span class="text-xs px-2 py-1 rounded-full border ${badgeClass}">${card.rarete}</span>
+            </div>
+          </div>
+          <div class="mt-2 font-semibold truncate">${card.titre}</div>
+          <div class="mt-1 text-xs text-slate-600 line-clamp-2">${card.description}</div>
+          <div class="mt-2 text-[11px] text-slate-500 font-mono truncate">${card.timestamp}</div>
+        `;
+
+        // Open modal on click (not interfering with drag)
+        cardBtn.addEventListener("click", (e) => {
+          // Avoid click after drag: if dragging, ignore
+          if (cardBtn.dataset.dragging === "1") return;
+          openCardModal(card.id);
+        });
+
+        // Drag & drop reorder
+        cardBtn.addEventListener("dragstart", (e) => {
+          cardBtn.dataset.dragging = "1";
+          e.dataTransfer.setData("text/plain", String(idx));
+          e.dataTransfer.effectAllowed = "move";
+          setTimeout(() => cardBtn.classList.add("drag-ghost"), 0);
+        });
+
+        cardBtn.addEventListener("dragend", () => {
+          cardBtn.classList.remove("drag-ghost");
+          setTimeout(() => { cardBtn.dataset.dragging = "0"; }, 60);
+        });
+
+        cardBtn.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        });
+
+        cardBtn.addEventListener("drop", (e) => {
+          e.preventDefault();
+          const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
+          const toIndex = idx;
+          if (!Number.isFinite(fromIndex) || fromIndex === toIndex) return;
+
+          const moved = inventaire.splice(fromIndex, 1)[0];
+          inventaire.splice(toIndex, 0, moved);
+
+          renderInventory();
+          saveSession();
+        });
+
+        inventoryGrid.appendChild(cardBtn);
+      });
+    }
+
+    function addCardToInventory(baseCard, forcedRarityKey = null) {
+      const rarityObj = forcedRarityKey
+        ? (RARITIES.find(r => r.key === forcedRarityKey) || RARITIES[0])
+        : weightedPick(RARITIES);
+
+      const card = {
+        id: cryptoSafeId(),
+        titre: baseCard.titre,
+        description: baseCard.description,
+        rarete: rarityObj.key,
+        icone: baseCard.icone,
+        timestamp: safeNowISO()
+      };
+
+      inventaire.push(card);
+      renderInventory();
+      saveSession();
+
+      maybeConfetti(card.rarete);
+      return card;
+    }
+
+    function cryptoSafeId() {
+      // Avoid console errors on browsers without crypto
+      try {
+        if (crypto && crypto.randomUUID) return crypto.randomUUID();
+      } catch {}
+      return "id_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+    }
+
+    function openCardModal(cardId) {
+      const card = inventaire.find(c => c.id === cardId);
+      if (!card) return;
+
+      modalTitle.textContent = `${card.icone} ${card.titre}`;
+      const { badgeClass } = getRarityStyles(card.rarete);
+
+      modalBody.innerHTML = `
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-xs px-2 py-1 rounded-full border ${badgeClass}">${card.rarete}</span>
+          <span class="text-xs px-2 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700 font-mono">#${card.id.slice(0, 8)}</span>
+        </div>
+        <div class="text-sm text-slate-700 leading-relaxed">${escapeHTML(card.description)}</div>
+        <div class="mt-3 text-xs text-slate-500 font-mono">Ajoutée : ${escapeHTML(card.timestamp)}</div>
+      `;
+
+      modalPin.onclick = () => {
+        pinnedCardId = card.id;
+        renderInventory();
+        saveSession();
+        closeModal();
+        setFeedback("⭐ Carte favorite définie ! (Tu peux en choisir une seule à la fois.)", true, "anim-pop");
+      };
+
+      modal.classList.remove("hidden");
+    }
+
+    function closeModal() {
+      modal.classList.add("hidden");
+    }
+
+    function escapeHTML(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    /************************************************************
+     * GAME FLOW
+     ************************************************************/
+    function resetGameState(keepStorage = false) {
+      stopTimer();
+      timeLeft = 0;
+      answered = false;
+      selectedAnswer = null;
+      matchState = { placed: {} };
+      timeExpired = false;
+      eggClicks = 0;
+      eggArmed = false;
+
+      currentIndex = -1;
+      score = 0;
+      streak = 0;
+
+      if (!keepStorage) {
+        inventaire = [];
+        pinnedCardId = null;
+        clearSession();
+      }
+
+      finalScreen.classList.add("hidden");
+      btnNext.classList.add("hidden");
+      btnValidate.disabled = false;
+      btnValidate.classList.remove("hidden");
+      btnStart.disabled = false;
+      btnStart.textContent = "Démarrer";
+      setStatus("Prêt", "indigo");
+
+      qTitle.textContent = "Appuie sur “Démarrer” pour lancer la mission.";
+      qPrompt.textContent = "Une situation pédagogique s’affichera ici.";
+      qTypeBadge.textContent = "—";
+      feedbackBox.className = "flex-1 p-4 rounded-2xl border border-slate-200 bg-slate-50 text-sm text-slate-700";
+      feedbackBox.textContent = "Feedback : prêt.";
+
+      hideAllZones();
+      updateScoreUI();
+      updateProgressUI();
+      timerLabel.textContent = "--";
+      timerBar.style.width = "0%";
+      timePenaltyLabel.textContent = "Temps: —";
+
+      renderInventory();
+    }
+
+    function hideAllZones() {
+      matchZone.classList.add("hidden");
+      choiceZone.classList.add("hidden");
+      tfZone.classList.add("hidden");
+      // clear content
+      matchChips.innerHTML = "";
+      matchDropzones.innerHTML = "";
+      choiceCards.innerHTML = "";
+      tfJustif.value = "";
+      lockInteractions(false);
+    }
+
+    function startGame() {
+      finalScreen.classList.add("hidden");
+      btnStart.disabled = true;
+      setStatus("En cours", "emerald");
+      nextQuestion();
+    }
+
+    function nextQuestion() {
+      stopTimer();
+      answered = false;
+      selectedAnswer = null;
+      matchState = { placed: {} };
+      timeExpired = false;
+
+      btnNext.classList.add("hidden");
+      btnValidate.disabled = false;
+
+      currentIndex += 1;
+
+      if (currentIndex >= questions.length) {
+        endGame();
+        return;
+      }
+
+      updateProgressUI();
+
+      const q = questions[currentIndex];
+      qTitle.textContent = q.title;
+      qPrompt.textContent = q.prompt;
+
+      qTypeBadge.textContent = q.type === "choice" ? "Choix scénarisé" : (q.type === "match" ? "Associer" : "Vrai/Faux");
+      qTypeBadge.className = "text-xs px-2 py-1 rounded-full border " + (
+        q.type === "match" ? "bg-amber-50 border-amber-200 text-amber-800" :
+        q.type === "tf" ? "bg-emerald-50 border-emerald-200 text-emerald-700" :
+        "bg-indigo-50 border-indigo-200 text-indigo-700"
+      );
+
+      hideAllZones();
+
+      // Random timer 20-30s
+      const seconds = 20 + Math.floor(Math.random() * 11); // 20..30
+      startTimer(seconds);
+
+      setFeedback("Lis la situation et interagis. Puis clique “Valider”.", true);
+
+      if (q.type === "choice") renderChoice(q);
+      if (q.type === "match") renderMatch(q);
+      if (q.type === "tf") renderTF(q);
+
+      // Allow validate
+      btnValidate.classList.remove("hidden");
+
+      // Slight animation
+      el("questionCard").classList.add("anim-pop");
+      setTimeout(() => el("questionCard").classList.remove("anim-pop"), 280);
+
+      saveSession();
+    }
+
+    function renderChoice(q) {
+      choiceZone.classList.remove("hidden");
+      choiceCards.innerHTML = "";
+
+      q.options.forEach(opt => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.setAttribute("data-option", opt.id);
+        btn.className = [
+          "p-4 rounded-2xl border border-slate-200 bg-white text-left shadow-sm",
+          "hover:shadow-md hover:-translate-y-[1px] active:scale-[.99] transition",
+          "focus:outline-none focus:ring-2 focus:ring-indigo-200"
+        ].join(" ");
+
+        btn.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div class="font-semibold">${escapeHTML(opt.label)}</div>
+            <div class="text-lg">🎯</div>
+          </div>
+          <div class="mt-2 text-xs text-slate-600">${escapeHTML(opt.why)}</div>
+        `;
+
+        btn.addEventListener("click", () => {
+          if (answered || timeExpired) return;
+          selectedAnswer = opt.id;
+
+          [...choiceCards.querySelectorAll("[data-option]")].forEach(x => {
+            x.classList.remove("ring-2", "ring-indigo-300", "border-indigo-300");
+          });
+          btn.classList.add("ring-2", "ring-indigo-300", "border-indigo-300");
+
+          setFeedback("Sélection enregistrée. Clique “Valider”.", true, "anim-pop");
+        });
+
+        choiceCards.appendChild(btn);
+      });
+    }
+
+    function renderTF(q) {
+      tfZone.classList.remove("hidden");
+      selectedAnswer = null;
+
+      [...document.querySelectorAll(".tfBtn")].forEach(b => {
+        b.classList.remove("ring-2", "ring-emerald-300", "border-emerald-300");
+        b.onclick = () => {
+          if (answered || timeExpired) return;
+          selectedAnswer = b.getAttribute("data-tf") === "true";
+          [...document.querySelectorAll(".tfBtn")].forEach(x => x.classList.remove("ring-2", "ring-emerald-300", "border-emerald-300"));
+          b.classList.add("ring-2", "ring-emerald-300", "border-emerald-300");
+          setFeedback("Choix enregistré. Ajoute une mini-justif (optionnel) puis “Valider”.", true, "anim-pop");
+        };
+      });
+    }
+
+    function renderMatch(q) {
+      matchZone.classList.remove("hidden");
+      matchChips.innerHTML = "";
+      matchDropzones.innerHTML = "";
+
+      // Create draggable chips
+      q.chips.forEach(ch => {
+        const chip = document.createElement("div");
+        chip.className = "select-none inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 bg-white shadow-sm cursor-grab active:cursor-grabbing hover:-translate-y-[1px] transition";
+        chip.setAttribute("draggable", "true");
+        chip.setAttribute("data-chip-id", ch.id);
+        chip.innerHTML = `<span>${ch.icon}</span><span class="text-sm font-semibold">${escapeHTML(ch.text)}</span>`;
+
+        chip.addEventListener("dragstart", (e) => {
+          if (answered || timeExpired) return e.preventDefault();
+          e.dataTransfer.setData("text/plain", ch.id);
+          e.dataTransfer.effectAllowed = "move";
+          chip.classList.add("drag-ghost");
+        });
+
+        chip.addEventListener("dragend", () => {
+          chip.classList.remove("drag-ghost");
+        });
+
+        matchChips.appendChild(chip);
+      });
+
+      // Create dropzones
+      q.dropzones.forEach(dz => {
+        const zone = document.createElement("div");
+        zone.className = "p-3 rounded-2xl border border-slate-200 bg-slate-50";
+        zone.setAttribute("data-dropzone-id", dz.id);
+
+        zone.innerHTML = `
+          <div class="text-xs text-slate-500">Définition</div>
+          <div class="text-sm text-slate-800 mt-1">${escapeHTML(dz.definition)}</div>
+          <div class="mt-3">
+            <div class="text-xs font-medium text-slate-700 mb-2">Dépose ici</div>
+            <div class="dropArea min-h-[46px] rounded-2xl border border-dashed border-slate-300 bg-white px-3 py-2 flex items-center gap-2">
+              <span class="text-xs text-slate-400">Glisse un concept…</span>
+            </div>
+          </div>
+        `;
+
+        const dropArea = zone.querySelector(".dropArea");
+
+        dropArea.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          if (answered || timeExpired) return;
+          dropArea.classList.add("ring-2", "ring-amber-200");
+        });
+
+        dropArea.addEventListener("dragleave", () => {
+          dropArea.classList.remove("ring-2", "ring-amber-200");
+        });
+
+        dropArea.addEventListener("drop", (e) => {
+          e.preventDefault();
+          dropArea.classList.remove("ring-2", "ring-amber-200");
+          if (answered || timeExpired) return;
+
+          const chipId = e.dataTransfer.getData("text/plain");
+          if (!chipId) return;
+
+          // Record placement
+          matchState.placed[dz.id] = chipId;
+
+          // Render chip inside drop area (compact)
+          const chipData = q.chips.find(c => c.id === chipId);
+          dropArea.innerHTML = "";
+          const pill = document.createElement("div");
+          pill.className = "inline-flex items-center gap-2 px-3 py-2 rounded-full border border-amber-200 bg-amber-50 text-amber-800 shadow-sm";
+          pill.innerHTML = `<span>${chipData?.icon || "🔸"}</span><span class="text-sm font-semibold">${escapeHTML(chipData?.text || chipId)}</span>`;
+          dropArea.appendChild(pill);
+
+          setFeedback("Placement enregistré. Remplis les zones (si possible) puis “Valider”.", true, "anim-pop");
+        });
+
+        matchDropzones.appendChild(zone);
+      });
+    }
+
+    function validateCurrent() {
+      if (answered || timeExpired) return;
+
+      const q = questions[currentIndex];
+      if (!q) return;
+
+      // Require interaction: selectedAnswer for choice/tf; or at least one placement for match
+      if (q.type === "choice") {
+        if (!selectedAnswer) {
+          setFeedback("⚠️ Choisis une option avant de valider.", false, "anim-shake");
+          return;
+        }
+      }
+      if (q.type === "tf") {
+        if (selectedAnswer === null) {
+          setFeedback("⚠️ Choisis Vrai ou Faux avant de valider.", false, "anim-shake");
+          return;
+        }
+      }
+      if (q.type === "match") {
+        const placedCount = Object.keys(matchState.placed).length;
+        if (placedCount === 0) {
+          setFeedback("⚠️ Glisse au moins un concept avant de valider.", false, "anim-shake");
+          return;
+        }
+      }
+
+      // Freeze
+      answered = true;
+      btnValidate.disabled = true;
+      btnNext.classList.remove("hidden");
+      lockInteractions(true);
+      stopTimer();
+
+      // Evaluate
+      let correct = false;
+      let pedagogic = "";
+
+      if (q.type === "choice") {
+        const opt = q.options.find(o => o.id === selectedAnswer);
+        correct = !!opt?.isCorrect;
+        pedagogic = opt?.why || "";
+      }
+
+      if (q.type === "tf") {
+        correct = (selectedAnswer === q.correctTF);
+        const just = tfJustif.value.trim();
+        pedagogic = correct
+          ? ("✔️ Exact. " + (just ? `Ta justification : “${just}”. ` : "") + "Le connectivisme accepte que la connaissance soit distribuée.")
+          : ("✘ Pas tout à fait. " + (just ? `Ta justification : “${just}”. ` : "") + "Astuce : pense réseau + outils + communautés.");
+      }
+
+      if (q.type === "match") {
+        // Consider correct if all dropzones filled and correct; partial score otherwise
+        const totalZones = q.dropzones.length;
+        let correctCount = 0;
+        q.dropzones.forEach(dz => {
+          if (matchState.placed[dz.id] === dz.answerChipId) correctCount += 1;
+        });
+        correct = (correctCount === totalZones);
+        pedagogic = correct
+          ? "✔️ Associations parfaites : tu as bien relié concepts et définitions."
+          : `ℹ️ Tu as ${correctCount}/${totalZones} correspondances correctes. Révise les liens concept → définition (réseau).`;
+      }
+
+      // Scoring + card awarding
+      if (correct) {
+        streak += 1;
+        const bonusTime = clamp(timeLeft, 0, 30);
+        const basePoints = 10;
+        const streakBonus = clamp(streak - 1, 0, 5); // max +5
+        const timeBonus = bonusTime >= 18 ? 2 : (bonusTime >= 10 ? 1 : 0);
+
+        score += basePoints + streakBonus + timeBonus;
+
+        // Levier 7: random feedback
+        const msg = POSITIVE_FEEDBACK[Math.floor(Math.random() * POSITIVE_FEEDBACK.length)];
+
+        // Levier 4: add card with random rarity; plus easter egg forced rare
+        let forced = null;
+        if (eggArmed) {
+          forced = "Rare";
+          eggArmed = false;
+        }
+        const cardGained = addCardToInventory(q.card, forced);
+
+        setStatus("Bonne réponse", "emerald");
+        setFeedback(`${msg}\n🃏 Carte gagnée : ${cardGained.icone} ${cardGained.titre} (${cardGained.rarete}).\n${pedagogic}`, true, "anim-pop");
+
+      } else {
+        streak = 0;
+        setStatus("À revoir", "amber");
+        setFeedback(`🧩 On consolide : ${pedagogic}\nIndice : ${q.hint}`, false, "anim-shake");
+      }
+
+      updateScoreUI();
+      saveSession();
+    }
+
+    function showHint() {
+      const q = questions[currentIndex];
+      if (!q) {
+        setFeedback("Démarre la mission d’abord 🙂", true, "anim-pop");
+        return;
+      }
+      setFeedback(`💡 Indice : ${q.hint}`, true, "anim-pop");
+    }
+
+    function endGame() {
+      stopTimer();
+      setStatus("Terminé", "slate");
+
+      finalScreen.classList.remove("hidden");
+      finalScore.textContent = String(score);
+      finalCards.textContent = String(inventaire.length);
+      finalMention.textContent = computeMention(score, questions.length);
+
+      // Hide validate/next
+      btnValidate.disabled = true;
+      btnNext.classList.add("hidden");
+
+      // Confetti finale if decent result
+      const mention = finalMention.textContent;
+      if (mention === "Expert") {
+        maybeConfetti("Légendaire");
+      } else if (mention === "Intermédiaire") {
+        maybeConfetti("Épique");
+      }
+
+      saveSession();
+    }
+
+    /************************************************************
+     * EASTER EGG (5 clicks title)
+     ************************************************************/
+    function openEgg() {
+      egg.classList.remove("hidden");
+      eggArmed = true; // next correct -> +1 Rare card
+      try {
+        if (typeof confetti === "function") confetti({ particleCount: 120, spread: 60, origin: { y: 0.7 } });
+      } catch {}
+      saveSession();
+    }
+
+    function closeEgg() {
+      egg.classList.add("hidden");
+    }
+
+    /************************************************************
+     * EVENTS
+     ************************************************************/
+    btnStart.addEventListener("click", () => startGame());
+
+    btnReset.addEventListener("click", () => {
+      resetGameState(false);
+      setFeedback("🔁 Reset effectué. Tu peux redémarrer.", true, "anim-pop");
+    });
+
+    btnHint.addEventListener("click", showHint);
+
+    btnValidate.addEventListener("click", validateCurrent);
+
+    btnNext.addEventListener("click", () => {
+      btnValidate.disabled = false;
+      setStatus("En cours", "emerald");
+      nextQuestion();
+    });
+
+    btnReplay.addEventListener("click", () => {
+      resetGameState(false);
+      startGame();
+    });
+
+    btnClearStorage.addEventListener("click", () => {
+      clearSession();
+      resetGameState(false);
+      setFeedback("🧹 Sauvegarde effacée (localStorage).", true, "anim-pop");
+    });
+
+    modalClose.addEventListener("click", closeModal);
+    modalOk.addEventListener("click", closeModal);
+    modal.addEventListener("click", (e) => {
+      // close when clicking overlay
+      if (e.target === modal) closeModal();
+    });
+
+    el("pageTitle").addEventListener("click", () => {
+      eggClicks += 1;
+      if (eggClicks >= 5) {
+        eggClicks = 0;
+        openEgg();
+      }
+    });
+
+    eggClose.addEventListener("click", closeEgg);
+    eggOk.addEventListener("click", closeEgg);
+
+    // Close modals with Esc
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (!modal.classList.contains("hidden")) closeModal();
+        if (!egg.classList.contains("hidden")) closeEgg();
+      }
+    });
+
+    /************************************************************
+     * BOOT
+     ************************************************************/
+    (function init() {
+      // Attempt to restore session (bonus localStorage)
+      const restored = loadSession();
+      renderInventory();
+      updateScoreUI();
+
+      // If restored and game in progress, resume at current question
+      if (restored && currentIndex >= 0 && currentIndex < questions.length) {
+        setStatus("Repris (sauvegarde)", "indigo");
+        btnStart.disabled = true;
+        // Render current question state by re-showing it (as not answered)
+        // We resume at currentIndex, but our flow assumes currentIndex points to last shown.
+        // So we will render that question without incrementing index:
+        const q = questions[currentIndex];
+        updateProgressUI();
+        qTitle.textContent = q.title;
+        qPrompt.textContent = q.prompt;
+        qTypeBadge.textContent = q.type === "choice" ? "Choix scénarisé" : (q.type === "match" ? "Associer" : "Vrai/Faux");
+        qIndexBadge.textContent = `${currentIndex + 1} / ${questions.length}`;
+        setFeedback("Session restaurée. Interagis puis valide (timer relancé).", true);
+
+        hideAllZones();
+        if (q.type === "choice") renderChoice(q);
+        if (q.type === "match") renderMatch(q);
+        if (q.type === "tf") renderTF(q);
+
+        // Restart timer fresh
+        const seconds = 20 + Math.floor(Math.random() * 11);
+        startTimer(seconds);
+      } else {
+        resetGameState(true); // keep any restored inventory if any (but state reset)
+        if (restored && inventaire.length > 0) {
+          setStatus("Sauvegarde chargée", "indigo");
+          setFeedback("📦 Inventaire restauré depuis localStorage. Clique “Démarrer” pour rejouer.", true, "anim-pop");
+        }
+      }
+    })();
+  </script>
+
+  <!-- Mini guide (3–5 lignes) -->
+  <!--
+    GUIDE :
+    1) Remplace “[ÉCRIRE ICI MON NOM COMPLET]” par ton nom.
+    2) Ouvre ce fichier en double-cliquant (index.html) puis clique “Démarrer”.
+    3) Joue : valide tes réponses, gagne des cartes (rareté aléatoire), organise-les en bas (drag & drop) et pin ⭐.
+    4) Clique 5 fois sur le titre pour l’easter egg. (Bonus Rare sur la prochaine bonne réponse)
+  -->
+</body>
+</html>
